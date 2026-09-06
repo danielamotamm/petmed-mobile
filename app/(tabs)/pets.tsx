@@ -1,0 +1,17 @@
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { ScreenContainer } from "@/components/screen-container";
+import { IconSymbol } from "@/components/ui/icon-symbol";
+import { useColors } from "@/hooks/use-colors";
+
+const pets = [
+  { id: "luna", name: "Luna", species: "Gato", weight: "4,2 kg", meds: "2 medicamentos ativos", next: "Próxima dose · 14:00", avatar: "L" },
+  { id: "thor", name: "Thor", species: "Cachorro", weight: "18 kg", meds: "1 medicamento ativo", next: "Próxima dose · 18:30", avatar: "T" },
+];
+
+export default function PetsScreen() {
+  const colors = useColors();
+  return <ScreenContainer className="px-4" edges={["top", "left", "right"]}>
+    <FlatList data={pets} keyExtractor={(item) => item.id} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} renderItem={({ item }) => <Pressable accessibilityRole="button" accessibilityLabel={`Abrir perfil de ${item.name}`} style={({ pressed }) => [styles.card, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && styles.pressed]}><View style={[styles.avatar, { backgroundColor: colors.primaryLight }]}><Text style={[styles.avatarText, { color: colors.primary }]}>{item.avatar}</Text></View><View style={styles.info}><Text style={[styles.name, { color: colors.foreground }]}>{item.name}</Text><Text style={[styles.meta, { color: colors.muted }]}>{item.species} · {item.weight}</Text><Text style={[styles.med, { color: colors.foreground }]}>{item.meds}</Text><Text style={[styles.next, { color: colors.primary }]}>{item.next}</Text></View><IconSymbol name="chevron.right" size={22} color={colors.muted} /></Pressable>} ListHeaderComponent={<View style={styles.header}><Text style={[styles.eyebrow, { color: colors.primary }]}>SEUS COMPANHEIROS</Text><Text style={[styles.title, { color: colors.foreground }]}>Pets</Text><Text style={[styles.subtitle, { color: colors.muted }]}>Mantenha os cuidados de cada pet em um só lugar.</Text></View>} ListFooterComponent={<Pressable accessibilityRole="button" style={({ pressed }) => [styles.addButton, { backgroundColor: colors.primary }, pressed && styles.pressed]}><IconSymbol name="plus" size={20} color="#FFFFFF" /><Text style={styles.addText}>ADICIONAR PET</Text></Pressable>} />
+  </ScreenContainer>;
+}
+const styles = StyleSheet.create({ content: { paddingTop: 18, paddingBottom: 30 }, header: { marginBottom: 20 }, eyebrow: { fontSize: 12, fontWeight: "700", letterSpacing: 1.7 }, title: { fontSize: 28, lineHeight: 36, fontWeight: "700", marginTop: 5 }, subtitle: { fontSize: 15, lineHeight: 22, marginTop: 4, maxWidth: 320 }, card: { flexDirection: "row", alignItems: "center", padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 12 }, avatar: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", marginRight: 13 }, avatarText: { fontSize: 23, fontWeight: "700" }, info: { flex: 1 }, name: { fontSize: 18, lineHeight: 25, fontWeight: "700" }, meta: { fontSize: 14, lineHeight: 20 }, med: { fontSize: 13, lineHeight: 18, marginTop: 7 }, next: { fontSize: 12, lineHeight: 17, fontWeight: "600", marginTop: 2 }, addButton: { minHeight: 48, borderRadius: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 10 }, addText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700", letterSpacing: 0.3 }, pressed: { opacity: 0.8, transform: [{ scale: 0.98 }] } });

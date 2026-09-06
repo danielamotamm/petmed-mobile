@@ -1,5 +1,7 @@
 export const themeColors: {
   primary: { light: string; dark: string };
+  primaryDark: { light: string; dark: string };
+  primaryLight: { light: string; dark: string };
   background: { light: string; dark: string };
   surface: { light: string; dark: string };
   foreground: { light: string; dark: string };
