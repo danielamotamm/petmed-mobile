@@ -22,6 +22,8 @@ Este repositório contém **duas partes com runtimes distintos**:
 ## Autenticação
 
 - OAuth via provedor externo (Manus), fluxo em `constants/oauth.ts` → `app/oauth/callback.tsx`.
+- **Scheme do standalone:** `petmed://` — fixo em `app.config.ts` (`scheme`) e espelhado em `constants/oauth.ts`. O redirect URI `petmed://oauth/callback` precisa estar registrado no provedor OAuth. Em Expo Go o runtime sobrescreve o scheme.
+- **Build standalone:** `eas.json` com perfis `development` (dev client), `preview` (APK interno) e `production`. Validar o fluxo OAuth de ponta a ponta exige um build EAS — o scheme não é exercitado no preview web.
 - **Nativo:** sessão via Bearer token guardado em `expo-secure-store` (`lib/_core/auth.ts`). Nunca usar AsyncStorage para tokens.
 - **Web:** sessão via cookie `app_session_id` (`credentials: "include"`).
 - **Guarda central:** `AuthGate` em `app/_layout.tsx` redireciona deslogados para `/login`. Telas não devem implementar verificação própria de login.

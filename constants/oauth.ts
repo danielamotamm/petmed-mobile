@@ -2,11 +2,10 @@ import * as Linking from "expo-linking";
 import * as ReactNative from "react-native";
 import * as SecureStore from "expo-secure-store";
 
-// Extract scheme from bundle ID (last segment timestamp, prefixed with "manus")
-// e.g., "space.manus.my.app.t20240115103045" -> "manus20240115103045"
-const bundleId = "com.app.petmedmobile";
-const timestamp = bundleId.split(".").pop()?.replace(/^t/, "") ?? "";
-const schemeFromBundleId = `manus${timestamp}`;
+// Deep link scheme of the standalone build (petmed://oauth/callback).
+// Must stay in sync with `scheme` in app.config.ts and with the redirect URI
+// registered at the OAuth provider. In Expo Go the runtime overrides it.
+const appScheme = "petmed";
 
 const env = {
   portal: process.env.EXPO_PUBLIC_OAUTH_PORTAL_URL ?? "",
@@ -15,7 +14,7 @@ const env = {
   ownerId: process.env.EXPO_PUBLIC_OWNER_OPEN_ID ?? "",
   ownerName: process.env.EXPO_PUBLIC_OWNER_NAME ?? "",
   apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? "",
-  deepLinkScheme: schemeFromBundleId,
+  deepLinkScheme: appScheme,
 };
 
 export const OAUTH_PORTAL_URL = env.portal;

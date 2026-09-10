@@ -29,6 +29,8 @@ export default function OAuthCallback() {
         await Auth.setSessionToken(result.sessionToken);
         const user = result.user as Omit<Auth.User, "lastSignedIn"> & { lastSignedIn: string };
         await Auth.setUserInfo({ ...user, lastSignedIn: new Date(user.lastSignedIn) });
+        // The AuthGate redirects to the tabs once the session is available;
+        // using replace keeps the callback out of the history stack.
         if (active) router.replace("/(tabs)");
       } catch (cause) { if (active) setError(cause instanceof Error ? cause.message : "Falha ao concluir autenticação."); }
     };

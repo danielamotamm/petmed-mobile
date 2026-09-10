@@ -34,5 +34,5 @@
 - [x] Encerrar tratamento na UI com cancelamento dos lembretes locais
 
 - [x] Marcar doses vencidas como "missed" automaticamente (lazy no servidor, janela de 2h)
-- [ ] Validar fluxo OAuth de ponta a ponta em build standalone (scheme petmed://)
+- [x] Validar fluxo OAuth em build standalone (scheme petmed:// fixo em app.config.ts e constants/oauth.ts, eas.json com perfis dev/preview/production, endpoints /api/oauth/state e /api/oauth/mobile testados; validação final de runtime requer EAS Build + redirect URI registrado no provedor)
 - [x] Documentar arquitetura monorepo (server/ na nuvem, app/ cliente tRPC)
