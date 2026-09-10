@@ -1,13 +1,109 @@
-import { useEffect, useState } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
-import { IconSymbol } from "@/components/ui/icon-symbol";
+import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
+import { cancelTreatmentNotifications } from "@/lib/notifications";
+import { trpc } from "@/lib/trpc";
 
-type MedicationRecord = { id: string; pet: string; name: string; dose: string; frequency: string; times: string[]; durationDays: number; instructions: string };
-const petData: Record<string, { name: string; species: string; weight: string; avatar: string }> = { luna: { name: "Luna", species: "Gato", weight: "4,2 kg", avatar: "L" }, thor: { name: "Thor", species: "Cachorro", weight: "18 kg", avatar: "T" } };
+export default function PetProfileScreen() {
+  const colors = useColors();
+  const { user } = useAuth();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const petId = Number(id);
+  const utils = trpc.useUtils();
+  const query = trpc.petmed.pets.byId.useQuery({ id: petId }, { enabled: Boolean(user) && Number.isInteger(petId) });
+  const stop = trpc.petmed.treatments.stop.useMutation({
+    onSuccess: async (_result, input) => {
+      void cancelTreatmentNotifications(input.id);
+      await Promise.all([utils.petmed.pets.byId.invalidate({ id: petId }), utils.petmed.pets.list.invalidate()]);
+    },
+  });
 
-export default function PetProfileScreen() { const colors = useColors(); const { id } = useLocalSearchParams<{ id: string }>(); const pet = petData[id || "luna"] || petData.luna; const [medications, setMedications] = useState<MedicationRecord[]>([]); useEffect(() => { AsyncStorage.getItem("petmed:medications").then((stored) => { if (stored) setMedications((JSON.parse(stored) as MedicationRecord[]).filter((item) => item.pet === pet.name)); }); }, [pet.name]); return <ScreenContainer className="px-4" edges={["top", "left", "right"]}><View style={styles.content}><Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.back}><IconSymbol name="chevron.left" size={24} color={colors.foreground} /><Text style={[styles.backText, { color: colors.foreground }]}>Pets</Text></Pressable><View style={styles.hero}><View style={[styles.avatar, { backgroundColor: colors.primaryLight }]}><Text style={[styles.avatarText, { color: colors.primary }]}>{pet.avatar}</Text></View><View><Text style={[styles.title, { color: colors.foreground }]}>{pet.name}</Text><Text style={[styles.meta, { color: colors.muted }]}>{pet.species} · {pet.weight}</Text></View></View><View style={styles.sectionHeader}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>Medicamentos ativos</Text><Text style={[styles.count, { color: colors.primary }]}>{medications.length}</Text></View>{medications.length === 0 ? <View style={[styles.empty, { backgroundColor: colors.surface, borderColor: colors.border }]}><IconSymbol name="pills.fill" size={24} color={colors.primary} /><Text style={[styles.emptyTitle, { color: colors.foreground }]}>Nenhum medicamento cadastrado</Text><Text style={[styles.emptyText, { color: colors.muted }]}>Cadastre a rotina de cuidado de {pet.name} para acompanhar horários e duração.</Text></View> : medications.map((medication) => <View key={medication.id} style={[styles.medCard, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={styles.medHeader}><View style={[styles.medIcon, { backgroundColor: colors.primaryLight }]}><IconSymbol name="pills.fill" size={20} color={colors.primary} /></View><View style={styles.medInfo}><Text style={[styles.medName, { color: colors.foreground }]}>{medication.name}</Text><Text style={[styles.medDose, { color: colors.muted }]}>{medication.dose} · {medication.frequency}</Text></View></View><View style={styles.medFooter}><Text style={[styles.medSchedule, { color: colors.primary }]}>{medication.times.join(" · ")}</Text><Text style={[styles.medDuration, { color: colors.muted }]}>{medication.durationDays} dias</Text></View>{medication.instructions ? <Text style={[styles.instructions, { color: colors.muted }]}>{medication.instructions}</Text> : null}</View>)}<Pressable accessibilityRole="button" onPress={() => router.push("/medication/new")} style={({ pressed }) => [styles.addButton, { backgroundColor: colors.primary }, pressed && styles.pressed]}><IconSymbol name="plus" size={20} color="#FFFFFF" /><Text style={styles.addText}>ADICIONAR MEDICAMENTO</Text></Pressable></View></ScreenContainer>; }
-const styles = StyleSheet.create({ content: { paddingTop: 12, paddingBottom: 28 }, back: { flexDirection: "row", alignItems: "center", gap: 4, minHeight: 44 }, backText: { fontSize: 15, fontWeight: "600" }, hero: { flexDirection: "row", alignItems: "center", gap: 14, marginTop: 18, marginBottom: 28 }, avatar: { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center" }, avatarText: { fontSize: 30, fontWeight: "700" }, title: { fontSize: 28, lineHeight: 36, fontWeight: "700" }, meta: { fontSize: 15, marginTop: 2 }, sectionHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }, sectionTitle: { fontSize: 20, lineHeight: 28, fontWeight: "700" }, count: { fontSize: 13, fontWeight: "700" }, empty: { borderWidth: 1, borderRadius: 16, padding: 18, alignItems: "center" }, emptyTitle: { fontSize: 16, fontWeight: "700", marginTop: 10 }, emptyText: { fontSize: 14, lineHeight: 20, textAlign: "center", marginTop: 5 }, medCard: { borderWidth: 1, borderRadius: 16, padding: 15, marginBottom: 11 }, medHeader: { flexDirection: "row", alignItems: "center" }, medIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center", marginRight: 11 }, medInfo: { flex: 1 }, medName: { fontSize: 16, fontWeight: "700" }, medDose: { fontSize: 13, marginTop: 3 }, medFooter: { flexDirection: "row", justifyContent: "space-between", marginTop: 13 }, medSchedule: { fontSize: 13, fontWeight: "700" }, medDuration: { fontSize: 13 }, instructions: { fontSize: 13, lineHeight: 19, marginTop: 8 }, addButton: { minHeight: 48, borderRadius: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 10 }, addText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" }, pressed: { opacity: 0.8, transform: [{ scale: 0.98 }] } });
+  if (!user || query.isLoading) {
+    return (
+      <ScreenContainer edges={["top"]}>
+        <View style={styles.center}>
+          <Text style={{ color: colors.muted }}>Carregando pet...</Text>
+        </View>
+      </ScreenContainer>
+    );
+  }
+  if (!query.data) {
+    return (
+      <ScreenContainer edges={["top"]}>
+        <View style={styles.center}>
+          <Text style={{ color: colors.muted }}>Pet não encontrado.</Text>
+        </View>
+      </ScreenContainer>
+    );
+  }
+
+  const { pet, treatments } = query.data;
+
+  return (
+    <ScreenContainer className="px-4" edges={["top", "left", "right"]}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <Pressable accessibilityRole="button" onPress={() => router.back()} style={({ pressed }) => pressed && styles.pressed}>
+          <Text style={{ color: colors.primary }}>Voltar para pets</Text>
+        </Pressable>
+        <View style={styles.hero}>
+          <View style={[styles.avatar, { backgroundColor: colors.primaryLight }]}>
+            <Text style={{ color: colors.primary, fontSize: 28, fontWeight: "700" }}>{pet.avatar}</Text>
+          </View>
+          <View>
+            <Text style={[styles.title, { color: colors.foreground }]}>{pet.name}</Text>
+            <Text style={{ color: colors.muted }}>{pet.species} · {pet.weight}</Text>
+          </View>
+        </View>
+
+        <Text style={[styles.section, { color: colors.foreground }]}>Medicamentos</Text>
+        {treatments.length === 0 ? (
+          <Text style={{ color: colors.muted }}>Nenhum medicamento cadastrado.</Text>
+        ) : (
+          treatments.map((treatment) => (
+            <View key={treatment.id} style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.name, { color: colors.foreground }]}>{treatment.name}</Text>
+              <Text style={{ color: colors.muted }}>{treatment.dose} {treatment.unit} · até {treatment.endDate}</Text>
+              <View style={styles.cardFooter}>
+                <Text style={{ color: treatment.status === "active" ? colors.success : colors.muted }}>
+                  {treatment.status === "active" ? "Ativo" : "Encerrado"}
+                </Text>
+                {treatment.status === "active" && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Encerrar tratamento ${treatment.name}`}
+                    disabled={stop.isPending}
+                    onPress={() => stop.mutate({ id: treatment.id })}
+                    style={({ pressed }) => [styles.stop, pressed && styles.pressed]}
+                  >
+                    <Text style={{ color: colors.error, fontWeight: "700", opacity: stop.isPending ? 0.6 : 1 }}>ENCERRAR</Text>
+                  </Pressable>
+                )}
+              </View>
+            </View>
+          ))
+        )}
+        <Pressable accessibilityRole="button" onPress={() => router.push("/medication/new")} style={({ pressed }) => [styles.add, { backgroundColor: colors.primary }, pressed && styles.pressed]}>
+          <Text style={styles.addText}>ADICIONAR MEDICAMENTO</Text>
+        </Pressable>
+      </ScrollView>
+    </ScreenContainer>
+  );
+}
+
+const styles = StyleSheet.create({
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  content: { paddingTop: 18, paddingBottom: 30 },
+  hero: { flexDirection: "row", alignItems: "center", gap: 14, marginVertical: 24 },
+  avatar: { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center" },
+  title: { fontSize: 28, fontWeight: "700" },
+  section: { fontSize: 20, fontWeight: "700", marginBottom: 12 },
+  card: { borderWidth: 1, borderRadius: 16, padding: 15, gap: 5, marginBottom: 10 },
+  cardFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 6 },
+  stop: { minHeight: 36, justifyContent: "center", paddingHorizontal: 8 },
+  name: { fontSize: 16, fontWeight: "700" },
+  add: { minHeight: 48, borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 14 },
+  addText: { color: "#FFF", fontWeight: "700" },
+  pressed: { opacity: 0.8 },
+});

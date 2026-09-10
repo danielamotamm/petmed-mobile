@@ -1,6 +1,14 @@
-import { eq } from "drizzle-orm";
+import { and, asc, eq, gte, lt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import {
+  doseOccurrences,
+  InsertUser,
+  medicationTreatments,
+  pets,
+  treatmentSchedules,
+  users,
+} from "../drizzle/schema";
+import type { DoseStatus, DoseWithDetails, PetSummary } from "../shared/petmed";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +97,217 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+function getUtcDate(date: string, time: string, timezone: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  let value = Date.UTC(year, month - 1, day, hour, minute);
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+
+  // Correct the UTC guess by the timezone offset at this instant. A second pass
+  // handles daylight-saving transitions without adding a date-time dependency.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const parts = Object.fromEntries(
+      formatter.formatToParts(new Date(value)).map(({ type, value }) => [type, value]),
+    );
+    const displayed = Date.UTC(
+      Number(parts.year),
+      Number(parts.month) - 1,
+      Number(parts.day),
+      Number(parts.hour),
+      Number(parts.minute),
+    );
+    value += Date.UTC(year, month - 1, day, hour, minute) - displayed;
+  }
+  return new Date(value);
+}
+
+function addDays(date: string, days: number) {
+  const value = new Date(`${date}T12:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+function assertTimezone(timezone: string) {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
+  } catch {
+    throw new Error("Invalid timezone");
+  }
+}
+
+export async function listPets(userId: number): Promise<PetSummary[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const userPets = await db.select().from(pets).where(eq(pets.userId, userId)).orderBy(asc(pets.name));
+  const treatments = await db
+    .select()
+    .from(medicationTreatments)
+    .where(and(eq(medicationTreatments.userId, userId), eq(medicationTreatments.status, "active")));
+  const pending = await db
+    .select()
+    .from(doseOccurrences)
+    .where(and(eq(doseOccurrences.userId, userId), eq(doseOccurrences.status, "pending"), gte(doseOccurrences.scheduledAt, new Date())))
+    .orderBy(asc(doseOccurrences.scheduledAt));
+
+  return userPets.map((pet) => ({
+    ...pet,
+    activeTreatmentCount: treatments.filter((treatment) => treatment.petId === pet.id).length,
+    nextDoseAt: pending.find((dose) => dose.petId === pet.id)?.scheduledAt ?? null,
+  }));
+}
+
+export async function createPet(userId: number, pet: Omit<typeof pets.$inferInsert, "id" | "userId">) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const result = await db.insert(pets).values({ ...pet, userId });
+  const id = Number(result[0].insertId);
+  const created = await db.select().from(pets).where(and(eq(pets.id, id), eq(pets.userId, userId))).limit(1);
+  if (!created[0]) throw new Error("Could not create pet");
+  return created[0];
+}
+
+export async function getPet(userId: number, petId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const result = await db.select().from(pets).where(and(eq(pets.id, petId), eq(pets.userId, userId))).limit(1);
+  return result[0];
+}
+
+export async function getPetTreatments(userId: number, petId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  return db
+    .select()
+    .from(medicationTreatments)
+    .where(and(eq(medicationTreatments.userId, userId), eq(medicationTreatments.petId, petId)))
+    .orderBy(asc(medicationTreatments.endDate));
+}
+
+export async function createTreatment(
+  userId: number,
+  input: {
+    petId: number;
+    name: string;
+    dose: string;
+    unit: string;
+    instructions?: string;
+    startDate: string;
+    durationDays: number;
+    timezone: string;
+    times: string[];
+  },
+) {
+  assertTimezone(input.timezone);
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const pet = await getPet(userId, input.petId);
+  if (!pet) throw new Error("Pet not found");
+  const endDate = addDays(input.startDate, input.durationDays - 1);
+
+  return db.transaction(async (tx) => {
+    const result = await tx.insert(medicationTreatments).values({
+      userId,
+      petId: input.petId,
+      name: input.name,
+      dose: input.dose,
+      unit: input.unit,
+      instructions: input.instructions || null,
+      startDate: input.startDate,
+      endDate,
+      timezone: input.timezone,
+    });
+    const treatmentId = Number(result[0].insertId);
+    await tx.insert(treatmentSchedules).values(input.times.map((time) => ({ treatmentId, time })));
+
+    const occurrences = Array.from({ length: input.durationDays }, (_, day) => {
+      const scheduledDate = addDays(input.startDate, day);
+      return input.times.map((time) => ({
+        userId,
+        petId: input.petId,
+        treatmentId,
+        scheduledAt: getUtcDate(scheduledDate, time, input.timezone),
+      }));
+    }).flat();
+    await tx.insert(doseOccurrences).values(occurrences);
+    return { id: treatmentId, endDate };
+  });
+}
+
+async function listDoses(userId: number, start: Date, end: Date): Promise<DoseWithDetails[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const rows = await db
+    .select({ occurrence: doseOccurrences, pet: pets, treatment: medicationTreatments })
+    .from(doseOccurrences)
+    .innerJoin(pets, eq(doseOccurrences.petId, pets.id))
+    .innerJoin(medicationTreatments, eq(doseOccurrences.treatmentId, medicationTreatments.id))
+    .where(
+      and(
+        eq(doseOccurrences.userId, userId),
+        gte(doseOccurrences.scheduledAt, start),
+        lt(doseOccurrences.scheduledAt, end),
+      ),
+    )
+    .orderBy(asc(doseOccurrences.scheduledAt));
+  return rows.map(({ occurrence, pet, treatment }) => ({
+    id: occurrence.id,
+    scheduledAt: occurrence.scheduledAt,
+    administeredAt: occurrence.administeredAt,
+    status: occurrence.status as DoseStatus,
+    pet: { id: pet.id, name: pet.name, species: pet.species, avatar: pet.avatar },
+    treatment: {
+      id: treatment.id,
+      name: treatment.name,
+      dose: treatment.dose,
+      unit: treatment.unit,
+      instructions: treatment.instructions,
+    },
+  }));
+}
+
+export async function listDosesForDate(userId: number, date: string, timezone: string) {
+  assertTimezone(timezone);
+  return listDoses(userId, getUtcDate(date, "00:00", timezone), getUtcDate(addDays(date, 1), "00:00", timezone));
+}
+
+export async function listDoseHistory(userId: number, from: Date, to: Date, status?: DoseStatus) {
+  const doses = await listDoses(userId, from, to);
+  return status ? doses.filter((dose) => dose.status === status) : doses;
+}
+
+export async function administerDose(userId: number, doseId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const existing = await db
+    .select()
+    .from(doseOccurrences)
+    .where(and(eq(doseOccurrences.id, doseId), eq(doseOccurrences.userId, userId)))
+    .limit(1);
+  const dose = existing[0];
+  if (!dose) throw new Error("Dose not found");
+  if (dose.status === "administered") return dose;
+  await db
+    .update(doseOccurrences)
+    .set({ status: "administered", administeredAt: new Date() })
+    .where(and(eq(doseOccurrences.id, doseId), eq(doseOccurrences.userId, userId)));
+  return { ...dose, status: "administered" as const };
+}
+
+export async function stopTreatment(userId: number, treatmentId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  const result = await db
+    .update(medicationTreatments)
+    .set({ status: "stopped" })
+    .where(and(eq(medicationTreatments.id, treatmentId), eq(medicationTreatments.userId, userId)));
+  if (result[0].affectedRows === 0) throw new Error("Treatment not found");
+  return { success: true } as const;
+}

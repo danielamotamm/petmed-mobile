@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Redirect } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { ThemedView } from "@/components/themed-view";
@@ -53,6 +54,9 @@ export default function ThemeLabScreen() {
       dark: build("dark"),
     };
   }, []);
+
+  // Dev-only screen: never expose in production builds.
+  if (!__DEV__) return <Redirect href="/" />;
 
   return (
     <ScreenContainer className="p-5">

@@ -1,5 +1,6 @@
 import * as Linking from "expo-linking";
 import * as ReactNative from "react-native";
+import * as SecureStore from "expo-secure-store";
 
 // Extract scheme from bundle ID (last segment timestamp, prefixed with "manus")
 // e.g., "space.manus.my.app.t20240115103045" -> "manus20240115103045"
@@ -51,17 +52,22 @@ export function getApiBaseUrl(): string {
 
 export const SESSION_TOKEN_KEY = "app_session_token";
 export const USER_INFO_KEY = "manus-runtime-user-info";
+const OAUTH_STATE_KEY = "oauth-state";
 
-const encodeState = (value: string) => {
-  if (typeof globalThis.btoa === "function") {
-    return globalThis.btoa(value);
-  }
-  const BufferImpl = (globalThis as Record<string, any>).Buffer;
-  if (BufferImpl) {
-    return BufferImpl.from(value, "utf-8").toString("base64");
-  }
-  return value;
-};
+function encodeState(value: object) {
+  const json = JSON.stringify(value);
+  if (typeof globalThis.btoa === "function") return globalThis.btoa(json).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const BufferImpl = (globalThis as { Buffer?: typeof Buffer }).Buffer;
+  if (BufferImpl) return BufferImpl.from(json, "utf8").toString("base64url");
+  throw new Error("Secure state encoding is unavailable");
+}
+
+function createNonce() {
+  const bytes = new Uint8Array(32);
+  if (!globalThis.crypto?.getRandomValues) throw new Error("Secure random values are unavailable");
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
 
 /**
  * Get the redirect URI for OAuth callback.
@@ -78,9 +84,17 @@ export const getRedirectUri = () => {
   }
 };
 
-export const getLoginUrl = () => {
+export const getLoginUrl = async () => {
   const redirectUri = getRedirectUri();
-  const state = encodeState(redirectUri);
+  let state: string;
+  if (ReactNative.Platform.OS === "web") {
+    const response = await fetch(`${getApiBaseUrl()}/api/oauth/state?${new URLSearchParams({ redirectUri })}`, { credentials: "include" });
+    if (!response.ok) throw new Error("Unable to start secure OAuth session");
+    state = (await response.json() as { state: string }).state;
+  } else {
+    state = encodeState({ redirectUri, nonce: createNonce() });
+    await SecureStore.setItemAsync(OAUTH_STATE_KEY, state);
+  }
 
   const url = new URL(`${OAUTH_PORTAL_URL}/app-auth`);
   url.searchParams.set("appId", APP_ID);
@@ -102,7 +116,7 @@ export const getLoginUrl = () => {
  * @returns Always null, the callback is handled via deep link.
  */
 export async function startOAuthLogin(): Promise<string | null> {
-  const loginUrl = getLoginUrl();
+  const loginUrl = await getLoginUrl();
 
   if (ReactNative.Platform.OS === "web") {
     // On web, just redirect

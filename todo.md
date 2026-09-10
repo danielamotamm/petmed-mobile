@@ -14,7 +14,7 @@
 - [x] Adicionar estados de empty state, pending, administered, missed, skipped e rescheduled
 - [x] Adicionar acessibilidade, áreas de toque e suporte a safe area
 - [x] Validar TypeScript, lint e testes unitários
-- [ ] Validar o preview e ajustar problemas visuais ou de interação
+- [x] Validar o preview e ajustar problemas visuais ou de interação
 - [ ] Criar checkpoint final antes da entrega
 
 - [x] Cadastro completo de medicamento com nome, dosagem e unidade
@@ -23,3 +23,16 @@
 - [x] Persistência local e integração do medicamento cadastrado à agenda
 - [x] Atualizar perfil do pet para listar medicamentos ativos
 - [x] Validar o novo fluxo e criar checkpoint da funcionalidade
+
+- [x] Migrar MVP local (AsyncStorage) para backend sincronizado (tRPC + MySQL/Drizzle)
+- [x] Criar schema de pets, tratamentos, horários e ocorrências de dose com migration
+- [x] Implementar petmedRouter (pets, treatments, doses) com validação Zod
+- [x] Reescrever autenticação com estado OAuth assinado e sessão via API
+- [x] Agendar notificações locais de dose (expo-notifications) com re-sync ao abrir a agenda
+- [x] Proteger rotas com guarda central de autenticação e tela de login dedicada
+- [x] Declarar telas de criação como modais e proteger theme-lab com __DEV__
+- [x] Encerrar tratamento na UI com cancelamento dos lembretes locais
+
+- [ ] Marcar doses vencidas como "missed" automaticamente (job no servidor)
+- [ ] Validar fluxo OAuth de ponta a ponta em build standalone (scheme petmed://)
+- [ ] Documentar arquitetura monorepo (server/ na nuvem, app/ cliente tRPC)

@@ -27,20 +27,24 @@ export type SessionPayload = {
 const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
 const GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
 const GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfoWithJwt`;
+type OAuthState = { redirectUri: string; nonce: string };
 
 class OAuthService {
   constructor(private client: ReturnType<typeof axios.create>) {
-    console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
     if (!ENV.oAuthServerUrl) {
-      console.error(
-        "[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable.",
-      );
+      console.warn("[OAuth] OAUTH_SERVER_URL is not configured");
     }
   }
 
-  private decodeState(state: string): string {
-    const redirectUri = atob(state);
-    return redirectUri;
+  private decodeState(state: string): OAuthState {
+    try {
+      const parsed = JSON.parse(Buffer.from(state, "base64url").toString("utf8")) as OAuthState;
+      if (!isNonEmptyString(parsed.redirectUri) || !isNonEmptyString(parsed.nonce)) throw new Error();
+      new URL(parsed.redirectUri);
+      return parsed;
+    } catch {
+      throw new Error("Invalid OAuth state");
+    }
   }
 
   async getTokenByCode(code: string, state: string): Promise<ExchangeTokenResponse> {
@@ -48,7 +52,7 @@ class OAuthService {
       clientId: ENV.appId,
       grantType: "authorization_code",
       code,
-      redirectUri: this.decodeState(state),
+      redirectUri: this.decodeState(state).redirectUri,
     };
 
     const { data } = await this.client.post<ExchangeTokenResponse>(EXCHANGE_TOKEN_PATH, payload);
@@ -137,6 +141,7 @@ class SDKServer {
 
   private getSessionSecret() {
     const secret = ENV.cookieSecret;
+    if (!secret) throw new Error("JWT_SECRET is not configured");
     return new TextEncoder().encode(secret);
   }
 
@@ -174,6 +179,8 @@ class SDKServer {
       name: payload.name,
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .setIssuer(`petmed:${ENV.appId}`)
+      .setAudience(ENV.appId)
       .setExpirationTime(expirationSeconds)
       .sign(secretKey);
   }
@@ -190,21 +197,27 @@ class SDKServer {
       const secretKey = this.getSessionSecret();
       const { payload } = await jwtVerify(cookieValue, secretKey, {
         algorithms: ["HS256"],
+        issuer: `petmed:${ENV.appId}`,
+        audience: ENV.appId,
       });
       const { openId, appId, name } = payload as Record<string, unknown>;
 
-      if (!isNonEmptyString(openId) || !isNonEmptyString(appId) || !isNonEmptyString(name)) {
-        console.warn("[Auth] Session payload missing required fields");
+      if (
+        !isNonEmptyString(openId) ||
+        appId !== ENV.appId ||
+        typeof name !== "string"
+      ) {
+        console.warn("[Auth] Invalid session payload");
         return null;
       }
 
       return {
         openId,
-        appId,
+        appId: appId as string,
         name,
       };
-    } catch (error) {
-      console.warn("[Auth] Session verification failed", String(error));
+    } catch {
+      console.warn("[Auth] Session verification failed");
       return null;
     }
   }

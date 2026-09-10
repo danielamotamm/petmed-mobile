@@ -1,6 +1,6 @@
 import "@/global.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { Redirect, Stack, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -18,6 +18,7 @@ import type { EdgeInsets, Metrics, Rect } from "react-native-safe-area-context";
 
 import { trpc, createTRPCClient } from "@/lib/trpc";
 import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/_core/manus-runtime";
+import { useAuth } from "@/hooks/use-auth";
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -25,6 +26,24 @@ const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
 export const unstable_settings = {
   anchor: "(tabs)",
 };
+
+/**
+ * Central auth gate: unauthenticated users can only reach the login and
+ * OAuth callback routes; authenticated users are kept out of the login page.
+ * Dev tooling routes stay reachable while running development builds.
+ */
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  const segments = useSegments();
+  const first = segments[0];
+  const isPublicRoute = first === "login" || first === "oauth";
+  const isDevRoute = first === "dev";
+
+  if (loading) return null;
+  if (!user && !isPublicRoute && !(isDevRoute && __DEV__)) return <Redirect href="/login" />;
+  if (user && first === "login") return <Redirect href="/(tabs)" />;
+  return <>{children}</>;
+}
 
 export default function RootLayout() {
   const initialInsets = initialWindowMetrics?.insets ?? DEFAULT_WEB_INSETS;
@@ -85,10 +104,15 @@ export default function RootLayout() {
           {/* Default to hiding native headers so raw route segments don't appear (e.g. "(tabs)", "products/[id]"). */}
           {/* If a screen needs the native header, explicitly enable it and set a human title via Stack.Screen options. */}
           {/* in order for ios apps tab switching to work properly, use presentation: "fullScreenModal" for login page, whenever you decide to use presentation: "modal*/}
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="oauth/callback" />
-          </Stack>
+          <AuthGate>
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="login" options={{ presentation: "fullScreenModal", gestureEnabled: false }} />
+              <Stack.Screen name="pet/new" options={{ presentation: "modal" }} />
+              <Stack.Screen name="medication/new" options={{ presentation: "modal" }} />
+              <Stack.Screen name="oauth/callback" />
+            </Stack>
+          </AuthGate>
           <StatusBar style="auto" />
         </QueryClientProvider>
       </trpc.Provider>

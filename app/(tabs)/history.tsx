@@ -1,12 +1,84 @@
-import { FlatList, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
-import { IconSymbol } from "@/components/ui/icon-symbol";
+import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
+import { trpc } from "@/lib/trpc";
+import type { DoseStatus } from "@/shared/petmed";
 
-const events = [
-  { id: "1", day: "Hoje", time: "08:04", pet: "Luna", medication: "Gabapentina · 100 mg", status: "Administrada", icon: "checkmark.circle.fill" as const, tone: "success" as const },
-  { id: "2", day: "Ontem", time: "22:02", pet: "Luna", medication: "Meloxicam · 0,5 ml", status: "Administrada", icon: "checkmark.circle.fill" as const, tone: "success" as const },
-  { id: "3", day: "Ontem", time: "18:30", pet: "Thor", medication: "Amoxicilina · 1 comprimido", status: "Perdida", icon: "exclamationmark.triangle.fill" as const, tone: "warning" as const },
+const filters: { label: string; value?: DoseStatus }[] = [
+  { label: "Todos" },
+  { label: "Administradas", value: "administered" },
+  { label: "Perdidas", value: "missed" },
 ];
-export default function HistoryScreen() { const colors = useColors(); return <ScreenContainer className="px-4" edges={["top", "left", "right"]}><FlatList data={events} keyExtractor={(item) => item.id} contentContainerStyle={styles.content} renderItem={({ item, index }) => <View style={styles.event}><Text style={[styles.day, { color: colors.muted }]}>{index === 0 || events[index - 1].day !== item.day ? item.day : ""}</Text><View style={[styles.eventCard, { backgroundColor: colors.surface, borderColor: colors.border }]}><IconSymbol name={item.icon} size={21} color={colors[item.tone]} /><View style={styles.info}><Text style={[styles.time, { color: colors.foreground }]}>{item.time} · {item.pet}</Text><Text style={[styles.medication, { color: colors.foreground }]}>{item.medication}</Text><Text style={[styles.status, { color: colors[item.tone] }]}>{item.status}</Text></View></View></View>} ListHeaderComponent={<View style={styles.header}><Text style={[styles.eyebrow, { color: colors.primary }]}>ACOMPANHAMENTO</Text><Text style={[styles.title, { color: colors.foreground }]}>Histórico</Text><Text style={[styles.subtitle, { color: colors.muted }]}>Uma visão simples do que já foi administrado.</Text><View style={styles.filters}><View style={[styles.filterActive, { backgroundColor: colors.primary }]}><Text style={styles.filterActiveText}>Todos</Text></View><View style={[styles.filter, { borderColor: colors.border }]}><Text style={[styles.filterText, { color: colors.muted }]}>Administradas</Text></View><View style={[styles.filter, { borderColor: colors.border }]}><Text style={[styles.filterText, { color: colors.muted }]}>Perdidas</Text></View></View></View>} /></ScreenContainer>; }
-const styles = StyleSheet.create({ content: { paddingTop: 18, paddingBottom: 30 }, header: { marginBottom: 16 }, eyebrow: { fontSize: 12, fontWeight: "700", letterSpacing: 1.7 }, title: { fontSize: 28, lineHeight: 36, fontWeight: "700", marginTop: 5 }, subtitle: { fontSize: 15, lineHeight: 22, marginTop: 4 }, filters: { flexDirection: "row", gap: 7, marginTop: 20 }, filterActive: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999 }, filterActiveText: { color: "#FFFFFF", fontSize: 12, fontWeight: "700" }, filter: { paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999, borderWidth: 1 }, filterText: { fontSize: 12, fontWeight: "600" }, event: { marginBottom: 14 }, day: { fontSize: 13, fontWeight: "700", marginBottom: 7 }, eventCard: { borderWidth: 1, borderRadius: 16, padding: 15, flexDirection: "row", alignItems: "flex-start", gap: 11 }, info: { flex: 1 }, time: { fontSize: 14, fontWeight: "700" }, medication: { fontSize: 15, marginTop: 3 }, status: { fontSize: 12, fontWeight: "600", marginTop: 6 } });
+
+export default function HistoryScreen() {
+  const colors = useColors();
+  const { user } = useAuth();
+  const [status, setStatus] = useState<DoseStatus | undefined>();
+  const [range] = useState(() => {
+    const now = new Date();
+    return { from: new Date(now.getTime() - 30 * 86400000), to: new Date(now.getTime() + 86400000) };
+  });
+  const query = trpc.petmed.doses.history.useQuery({ ...range, status }, { enabled: Boolean(user) });
+
+  // AuthGate guarantees an authenticated user on this route.
+  if (!user) return null;
+
+  return (
+    <ScreenContainer className="px-4" edges={["top", "left", "right"]}>
+      <FlatList
+        data={query.data ?? []}
+        keyExtractor={(item) => String(item.id)}
+        refreshing={query.isRefetching}
+        onRefresh={() => void query.refetch()}
+        contentContainerStyle={styles.content}
+        ListHeaderComponent={
+          <View style={styles.header}>
+            <Text style={[styles.eyebrow, { color: colors.primary }]}>ACOMPANHAMENTO</Text>
+            <Text style={[styles.title, { color: colors.foreground }]}>Histórico</Text>
+            <View style={styles.filters}>
+              {filters.map((filter) => (
+                <Pressable
+                  key={filter.label}
+                  accessibilityRole="button"
+                  onPress={() => setStatus(filter.value)}
+                  style={[styles.filter, { borderColor: filter.value === status ? colors.primary : colors.border, backgroundColor: filter.value === status ? colors.primary : colors.surface }]}
+                >
+                  <Text style={{ color: filter.value === status ? "#FFF" : colors.muted }}>{filter.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        }
+        ListEmptyComponent={<Text style={[styles.empty, { color: colors.muted }]}>Nenhuma dose encontrada no período.</Text>}
+        renderItem={({ item }) => (
+          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={styles.info}>
+              <Text style={[styles.name, { color: colors.foreground }]}>{item.treatment.name}</Text>
+              <Text style={{ color: colors.muted }}>
+                {item.pet.name} · {new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(item.administeredAt ?? item.scheduledAt)}
+              </Text>
+            </View>
+            <Text style={{ color: item.status === "administered" ? colors.success : item.status === "missed" ? colors.warning : colors.muted }}>
+              {item.status === "administered" ? "Administrada" : item.status === "missed" ? "Perdida" : "Pendente"}
+            </Text>
+          </View>
+        )}
+      />
+    </ScreenContainer>
+  );
+}
+
+const styles = StyleSheet.create({
+  content: { paddingTop: 18, paddingBottom: 30 },
+  header: { marginBottom: 18 },
+  eyebrow: { fontSize: 12, fontWeight: "700", letterSpacing: 1.7 },
+  title: { fontSize: 28, fontWeight: "700", marginVertical: 5 },
+  filters: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 14 },
+  filter: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
+  card: { borderWidth: 1, borderRadius: 16, padding: 14, flexDirection: "row", gap: 10, marginBottom: 10 },
+  info: { flex: 1 },
+  name: { fontSize: 16, fontWeight: "700", marginBottom: 3 },
+  empty: { paddingVertical: 28, textAlign: "center" },
+});

@@ -1,4 +1,6 @@
-import { COOKIE_NAME, ONE_YEAR_MS } from "../../shared/const.js";
+import { COOKIE_NAME, OAUTH_STATE_COOKIE, ONE_YEAR_MS } from "../../shared/const.js";
+import { randomBytes } from "crypto";
+import { serialize } from "cookie";
 import type { Express, Request, Response } from "express";
 import { getUserByOpenId, upsertUser } from "../db";
 import { getSessionCookieOptions } from "./cookies";
@@ -62,12 +64,35 @@ function buildUserResponse(
 }
 
 export function registerOAuthRoutes(app: Express) {
+  app.get("/api/oauth/state", (req: Request, res: Response) => {
+    const redirectUri = getQueryParam(req, "redirectUri");
+    if (!redirectUri) {
+      res.status(400).json({ error: "redirectUri is required" });
+      return;
+    }
+    try {
+      const url = new URL(redirectUri);
+      if (url.pathname !== "/api/oauth/callback") throw new Error();
+    } catch {
+      res.status(400).json({ error: "Invalid redirectUri" });
+      return;
+    }
+    const state = Buffer.from(JSON.stringify({ redirectUri, nonce: randomBytes(32).toString("base64url") })).toString("base64url");
+    res.setHeader("Set-Cookie", serialize(OAUTH_STATE_COOKIE, state, { httpOnly: true, path: "/api/oauth", sameSite: "lax", secure: req.secure || process.env.NODE_ENV === "production", maxAge: 600 }));
+    res.json({ state });
+  });
+
   app.get("/api/oauth/callback", async (req: Request, res: Response) => {
     const code = getQueryParam(req, "code");
     const state = getQueryParam(req, "state");
 
     if (!code || !state) {
       res.status(400).json({ error: "code and state are required" });
+      return;
+    }
+    const expectedState = req.cookies?.[OAUTH_STATE_COOKIE] ?? req.headers.cookie?.match(new RegExp(`(?:^|; )${OAUTH_STATE_COOKIE}=([^;]+)`))?.[1];
+    if (!expectedState || expectedState !== state) {
+      res.status(400).json({ error: "Invalid OAuth state" });
       return;
     }
 
@@ -82,6 +107,7 @@ export function registerOAuthRoutes(app: Express) {
 
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+      res.clearCookie(OAUTH_STATE_COOKIE, { path: "/api/oauth" });
 
       // Redirect to the frontend URL (Expo web on port 8081)
       // Cookie is set with parent domain so it works across both 3000 and 8081 subdomains

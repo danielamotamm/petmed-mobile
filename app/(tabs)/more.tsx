@@ -1,12 +1,51 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
-import { IconSymbol } from "@/components/ui/icon-symbol";
+import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
+import { trpc } from "@/lib/trpc";
 
-const items = [
-  { icon: "bell.fill" as const, title: "Lembretes", detail: "Notificações no dispositivo" },
-  { icon: "calendar" as const, title: "Começo da semana", detail: "Domingo" },
-  { icon: "person.fill" as const, title: "Sobre o PetMed", detail: "Versão 1.0.0" },
-];
-export default function MoreScreen() { const colors = useColors(); return <ScreenContainer className="px-4" edges={["top", "left", "right"]}><View style={styles.content}><View style={styles.header}><Text style={[styles.eyebrow, { color: colors.primary }]}>CONFIGURAÇÕES</Text><Text style={[styles.title, { color: colors.foreground }]}>Mais</Text><Text style={[styles.subtitle, { color: colors.muted }]}>Ajuste o PetMed para a rotina da sua casa.</Text></View><View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>{items.map((item, index) => <Pressable accessibilityRole="button" key={item.title} style={({ pressed }) => [styles.item, index < items.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border }, pressed && styles.pressed]}><View style={[styles.iconBox, { backgroundColor: colors.primaryLight }]}><IconSymbol name={item.icon} size={20} color={colors.primary} /></View><View style={styles.info}><Text style={[styles.itemTitle, { color: colors.foreground }]}>{item.title}</Text><Text style={[styles.detail, { color: colors.muted }]}>{item.detail}</Text></View><IconSymbol name="chevron.right" size={20} color={colors.muted} /></Pressable>)}</View><View style={[styles.tip, { backgroundColor: colors.primaryLight }]}><IconSymbol name="pills.fill" size={22} color={colors.primary} /><View style={styles.tipInfo}><Text style={[styles.tipTitle, { color: colors.foreground }]}>Cuidado que acompanha</Text><Text style={[styles.tipText, { color: colors.muted }]}>O PetMed ajuda você a manter a rotina organizada. Em caso de dúvidas, siga sempre a orientação veterinária.</Text></View></View></View></ScreenContainer>; }
-const styles = StyleSheet.create({ content: { paddingTop: 18 }, header: { marginBottom: 20 }, eyebrow: { fontSize: 12, fontWeight: "700", letterSpacing: 1.7 }, title: { fontSize: 28, lineHeight: 36, fontWeight: "700", marginTop: 5 }, subtitle: { fontSize: 15, lineHeight: 22, marginTop: 4, maxWidth: 330 }, card: { borderWidth: 1, borderRadius: 16, overflow: "hidden" }, item: { minHeight: 76, flexDirection: "row", alignItems: "center", paddingHorizontal: 15 }, iconBox: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center", marginRight: 12 }, info: { flex: 1 }, itemTitle: { fontSize: 15, fontWeight: "700" }, detail: { fontSize: 13, marginTop: 3 }, tip: { marginTop: 18, borderRadius: 16, padding: 15, flexDirection: "row", gap: 11 }, tipInfo: { flex: 1 }, tipTitle: { fontSize: 14, fontWeight: "700" }, tipText: { fontSize: 13, lineHeight: 19, marginTop: 4 }, pressed: { opacity: 0.72 } });
+export default function MoreScreen() {
+  const colors = useColors();
+  const { user, logout } = useAuth();
+  const utils = trpc.useUtils();
+
+  const signOut = async () => {
+    await logout();
+    await utils.invalidate();
+  };
+
+  // AuthGate guarantees an authenticated user on this route.
+  if (!user) return null;
+
+  return (
+    <ScreenContainer className="px-4" edges={["top", "left", "right"]}>
+      <View style={styles.content}>
+        <Text style={[styles.eyebrow, { color: colors.primary }]}>CONFIGURAÇÕES</Text>
+        <Text style={[styles.title, { color: colors.foreground }]}>Mais</Text>
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={[styles.name, { color: colors.foreground }]}>{user.name || "Conta PetMed"}</Text>
+          <Text style={{ color: colors.muted }}>{user.email || "Conta sincronizada"}</Text>
+          <Pressable accessibilityRole="button" onPress={() => void signOut()} style={({ pressed }) => [styles.button, pressed && styles.pressed]}>
+            <Text style={{ color: colors.error, fontWeight: "700" }}>SAIR DA CONTA</Text>
+          </Pressable>
+        </View>
+        <View style={[styles.tip, { backgroundColor: colors.primaryLight }]}>
+          <Text style={[styles.tipTitle, { color: colors.foreground }]}>Cuidado que acompanha</Text>
+          <Text style={{ color: colors.muted }}>Siga sempre a orientação veterinária para tratamentos e dosagens.</Text>
+        </View>
+      </View>
+    </ScreenContainer>
+  );
+}
+
+const styles = StyleSheet.create({
+  content: { paddingTop: 18 },
+  eyebrow: { fontSize: 12, fontWeight: "700", letterSpacing: 1.7 },
+  title: { fontSize: 28, fontWeight: "700", marginTop: 5, marginBottom: 20 },
+  card: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 5 },
+  name: { fontSize: 17, fontWeight: "700" },
+  button: { marginTop: 12, minHeight: 44, justifyContent: "center" },
+  tip: { marginTop: 18, borderRadius: 16, padding: 16, gap: 5 },
+  tipTitle: { fontWeight: "700" },
+  pressed: { opacity: 0.72 },
+});
