@@ -33,6 +33,6 @@
 - [x] Declarar telas de criação como modais e proteger theme-lab com __DEV__
 - [x] Encerrar tratamento na UI com cancelamento dos lembretes locais
 
-- [ ] Marcar doses vencidas como "missed" automaticamente (job no servidor)
+- [x] Marcar doses vencidas como "missed" automaticamente (lazy no servidor, janela de 2h)
 - [ ] Validar fluxo OAuth de ponta a ponta em build standalone (scheme petmed://)
 - [ ] Documentar arquitetura monorepo (server/ na nuvem, app/ cliente tRPC)

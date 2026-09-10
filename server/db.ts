@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, lt } from "drizzle-orm";
+import { and, asc, eq, gte, lt, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   doseOccurrences,
@@ -241,9 +241,34 @@ export async function createTreatment(
   });
 }
 
+/**
+ * Grace window after the scheduled time during which a pending dose can still
+ * be administered. Past it, the dose is considered missed.
+ */
+const MISSED_GRACE_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * Lazily marks overdue pending doses as missed. Runs before every listing so
+ * no cron job is required and the result is always consistent for the user.
+ */
+async function markOverdueDosesAsMissed(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, userId: number) {
+  const cutoff = new Date(Date.now() - MISSED_GRACE_MS);
+  await db
+    .update(doseOccurrences)
+    .set({ status: "missed" })
+    .where(
+      and(
+        eq(doseOccurrences.userId, userId),
+        eq(doseOccurrences.status, "pending"),
+        lte(doseOccurrences.scheduledAt, cutoff),
+      ),
+    );
+}
+
 async function listDoses(userId: number, start: Date, end: Date): Promise<DoseWithDetails[]> {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable");
+  await markOverdueDosesAsMissed(db, userId);
   const rows = await db
     .select({ occurrence: doseOccurrences, pet: pets, treatment: medicationTreatments })
     .from(doseOccurrences)
@@ -294,6 +319,8 @@ export async function administerDose(userId: number, doseId: number) {
   const dose = existing[0];
   if (!dose) throw new Error("Dose not found");
   if (dose.status === "administered") return dose;
+  // Late confirmation still counts: a pending dose past the grace window is
+  // shown as missed, but administering it must record it correctly.
   await db
     .update(doseOccurrences)
     .set({ status: "administered", administeredAt: new Date() })

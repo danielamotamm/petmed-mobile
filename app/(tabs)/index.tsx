@@ -68,8 +68,8 @@ export default function HomeScreen() {
           <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View>
               <Text style={[styles.doseTime, { color: colors.foreground }]}>{time(item.scheduledAt)}</Text>
-              <Text style={[styles.status, { color: item.status === "administered" ? colors.success : colors.muted }]}>
-                {item.status === "administered" ? "Administrada" : "Pendente"}
+              <Text style={[styles.status, { color: item.status === "administered" ? colors.success : item.status === "missed" ? colors.warning : colors.muted }]}>
+                {item.status === "administered" ? "Administrada" : item.status === "missed" ? "Perdida" : "Pendente"}
               </Text>
             </View>
             <View style={styles.info}>
