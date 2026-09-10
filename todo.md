@@ -35,4 +35,4 @@
 
 - [x] Marcar doses vencidas como "missed" automaticamente (lazy no servidor, janela de 2h)
 - [ ] Validar fluxo OAuth de ponta a ponta em build standalone (scheme petmed://)
-- [ ] Documentar arquitetura monorepo (server/ na nuvem, app/ cliente tRPC)
+- [x] Documentar arquitetura monorepo (server/ na nuvem, app/ cliente tRPC)
